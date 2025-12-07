@@ -1,0 +1,21 @@
+# Dependências (Pesadas e geradas automaticamente)
+node_modules/
+
+# Build (Gerado pelo build)
+dist/
+build/
+
+# Variáveis de Ambiente (Segredos)
+.env
+
+# Logs
+npm-debug.log
+yarn-error.log
+
+# Arquivos de sistema/IDE
+.DS_Store
+.vscode/
+.idea/
+
+# Binários do Go
+services/weather-worker/worker

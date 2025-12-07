@@ -1,0 +1,147 @@
+networks:
+  gdash-net:
+    driver: bridge
+
+volumes:
+  mongo_data:
+
+services:
+  # ----------------------------------------------------------------
+  # 1. Infraestrutura: Banco de Dados
+  # ----------------------------------------------------------------
+  mongodb:
+    image: mongo:6.0
+    container_name: gdash-mongo
+    restart: always
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: ${MONGO_INITDB_ROOT_USERNAME}
+      MONGO_INITDB_ROOT_PASSWORD: ${MONGO_INITDB_ROOT_PASSWORD}
+    ports:
+      - "${MONGO_PORT}:27017" # Exposto para acesso local (Compass/Atlas)
+    volumes:
+      - mongo_data:/data/db
+    networks:
+      - gdash-net
+    healthcheck:
+      test: echo 'db.runCommand("ping").ok' | mongosh localhost:27017/test --quiet
+      interval: 10s
+      timeout: 10s
+      retries: 5
+
+  # ----------------------------------------------------------------
+  # 2. Infraestrutura: Message Broker
+  # ----------------------------------------------------------------
+  rabbitmq:
+    image: rabbitmq:3-management
+    container_name: gdash-rabbitmq
+    restart: always
+    environment:
+      RABBITMQ_DEFAULT_USER: ${RABBITMQ_DEFAULT_USER}
+      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_DEFAULT_PASS}
+    ports:
+      - "${RABBITMQ_PORT}:5672" # Protocolo AMQP
+      - "${RABBITMQ_UI_PORT}:15672" # Interface Web
+    networks:
+      - gdash-net
+    healthcheck:
+      test: rabbitmq-diagnostics -q ping
+      interval: 10s
+      timeout: 10s
+      retries: 5
+
+  # ----------------------------------------------------------------
+  # 3. Serviço: Coletor (Python)
+  # ----------------------------------------------------------------
+  weather-collector:
+    build:
+      context: ./services/weather-collector
+      dockerfile: Dockerfile
+    container_name: gdash-collector
+    restart: on-failure
+    environment:
+      - RABBITMQ_HOST=${RABBITMQ_HOST}
+      - RABBITMQ_USER=${RABBITMQ_DEFAULT_USER}
+      - RABBITMQ_PASS=${RABBITMQ_DEFAULT_PASS}
+      - TARGET_CITY=${TARGET_CITY}
+      - TARGET_LAT=${TARGET_LAT}
+      - TARGET_LON=${TARGET_LON}
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+    networks:
+      - gdash-net
+    # Volume para Hot-Reload durante desenvolvimento
+    volumes:
+      - ./services/weather-collector:/app
+
+  # ----------------------------------------------------------------
+  # 4. Serviço: Worker (Go)
+  # ----------------------------------------------------------------
+  weather-worker:
+    build:
+      context: ./services/weather-worker
+      dockerfile: Dockerfile
+    container_name: gdash-worker
+    restart: on-failure
+    environment:
+      - RABBITMQ_HOST=${RABBITMQ_HOST}
+      - RABBITMQ_USER=${RABBITMQ_DEFAULT_USER}
+      - RABBITMQ_PASS=${RABBITMQ_DEFAULT_PASS}
+      - API_URL=${API_URL}
+      - INTERNAL_API_TOKEN=${INTERNAL_API_TOKEN}
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+      core-api:
+        condition: service_started
+    networks:
+      - gdash-net
+    volumes:
+      - ./services/weather-worker:/app
+
+  # ----------------------------------------------------------------
+  # 5. Serviço: Backend API (NestJS)
+  # ----------------------------------------------------------------
+  core-api:
+    build:
+      context: ./services/core-api
+      dockerfile: Dockerfile
+    container_name: gdash-api
+    ports:
+      - "${API_PORT}:3000"
+    environment:
+      - MONGODB_URI=mongodb://${MONGO_INITDB_ROOT_USERNAME}:${MONGO_INITDB_ROOT_PASSWORD}@mongodb:27017/${MONGO_DB_NAME}?authSource=admin
+      - JWT_SECRET=${JWT_SECRET}
+      - GEMINI_API_KEY=${GEMINI_API_KEY}
+      - INTERNAL_API_TOKEN=${INTERNAL_API_TOKEN}
+      - API_PORT=3000
+      - ALLOWED_ORIGINS=http://localhost:${WEB_PORT},http://localhost:5173,http://localhost:3001
+    depends_on:
+      mongodb:
+        condition: service_healthy
+    networks:
+      - gdash-net
+    volumes:
+      - ./services/core-api:/app
+      - /app/node_modules # Evita que o node_modules local sobrescreva o do container
+
+  # ----------------------------------------------------------------
+  # 6. Serviço: Frontend (React + Vite)
+  # ----------------------------------------------------------------
+  web-app:
+    build:
+      context: ./services/web-app
+      dockerfile: Dockerfile
+    container_name: gdash-web
+    ports:
+      - "${WEB_PORT}:5173"
+    environment:
+      - VITE_API_URL=http://localhost:${API_PORT} # Acessado pelo browser, então é localhost
+      - CHOKIDAR_USEPOLLING=true
+    depends_on:
+      - core-api
+    networks:
+      - gdash-net
+    volumes:
+      - ./services/web-app:/app
+      - /app/node_modules

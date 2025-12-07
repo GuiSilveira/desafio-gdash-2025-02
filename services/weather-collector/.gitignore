@@ -1,0 +1,40 @@
+# --- 🐍 Python Bytecode (Lixo gerado automaticamente) ---
+__pycache__/
+*.py[cod]
+*$py.class
+
+# --- 📦 Ambientes Virtuais (Não suba suas libs!) ---
+# Padrões comuns de venv
+venv/
+.venv/
+env/
+ENV/
+
+# --- 🔐 Segredos e Configuração ---
+# CRÍTICO: Nunca comite suas chaves reais!
+.env
+.env.local
+.env.*
+
+# --- 🧪 Testes e Qualidade de Código ---
+.pytest_cache/
+.coverage
+htmlcov/
+.mypy_cache/
+.ruff_cache/
+
+# --- 📦 Distribuição e Build ---
+build/
+dist/
+*.egg-info/
+.eggs/
+
+# --- 📝 Logs e Arquivos Temporários ---
+*.log
+*.pot
+*.mo
+
+# --- 💻 IDEs e Editores (Opcional, se não tiver no root) ---
+.vscode/
+.idea/
+*.swp
